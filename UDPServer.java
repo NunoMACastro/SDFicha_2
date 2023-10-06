@@ -3,6 +3,7 @@ import java.io.*;
 import java.util.*;
 
 public class UDPServer {
+
     public static Integer getLast(LinkedHashMap<Integer, String> lhm) {
         int count = 1;
 
@@ -15,7 +16,7 @@ public class UDPServer {
         return 0;
     }
 
-    public static void main(String args[]) {
+    public static void main(String[] args) {
         DatagramSocket aSocket = null;
 
         try {
@@ -24,7 +25,8 @@ public class UDPServer {
 
             LinkedHashMap<Integer, String> listaEmOrdem = new LinkedHashMap<Integer, String>();
             LinkedHashMap<Integer, String> listaTemp = new LinkedHashMap<Integer, String>();
-            Integer quantidade = 0;
+            ArrayList<String> mensagensTemporarias = new ArrayList<>();
+            Integer proximaMensagemEsperada = 1;
             Integer lastKey = 0;
 
             while (true) {
@@ -36,42 +38,41 @@ public class UDPServer {
                 Integer numero = Integer.valueOf(msgRecebida.split(",")[0]);
                 String msg = msgRecebida.split(",")[1];
 
-                lastKey = getLast(listaEmOrdem);
 
-                if (quantidade != numero) {
-                    System.out.println("Desfazado: Mensagem vai para lista Temporária!");
-                    listaTemp.put(numero, msg);
-
-                    // Notificar o cliente da mensagem seguinte à última mensagem recebida em ordem
-                    int nextExpectedMessage = lastKey + 1;
-                    String notificationMsg = "waitingfor," + nextExpectedMessage;
-                    DatagramPacket notification = new DatagramPacket(notificationMsg.getBytes(), notificationMsg.length(), request.getAddress(), request.getPort());
-                    aSocket.send(notification);
-                } else {
+                if(numero.equals(proximaMensagemEsperada)) {
+                    String reply = "";
                     System.out.println("Mensagem em ordem!");
                     listaEmOrdem.put(numero, msg);
+                    proximaMensagemEsperada++;
 
-                    // Entregar todas as mensagens em ordem presentes na estrutura temporária
-                    while (listaTemp.containsKey(lastKey + 1)) {
-                        lastKey++;
-                        String nextMsg = listaTemp.get(lastKey);
-                        listaEmOrdem.put(lastKey, nextMsg);
-                        listaTemp.remove(lastKey);
+                    if(mensagensTemporarias.isEmpty()){
+                        System.out.println("última mensagem processada");
+                        reply = "última mensagem processada";
+                        DatagramPacket reply_F = new DatagramPacket(reply.getBytes(), reply.length(), request.getAddress(), request.getPort());
+                        aSocket.send(reply_F);
                     }
+                    else {
 
-                    // Enviar uma resposta para o cliente para indicar que a mensagem foi processada
-                    String replyMsg;
-                    if (listaTemp.isEmpty()) {
-                        replyMsg = "última mensagem processada";
-                    } else {
-                        int nextExpectedMessage = lastKey + 1;
-                        replyMsg = "waitingfor," + nextExpectedMessage;
+                        while (mensagensTemporarias.contains(proximaMensagemEsperada + ",")) {
+                            int index = mensagensTemporarias.indexOf(proximaMensagemEsperada + ",");
+                            String mensagemTemporaria = mensagensTemporarias.remove(index);
+                            String[] partesTemporarias = mensagemTemporaria.split(",");
+                            System.out.println("Processando mensagem temporária " + proximaMensagemEsperada + ": " + partesTemporarias[1]);
+                            listaEmOrdem.put(proximaMensagemEsperada, partesTemporarias[1]);
+                            proximaMensagemEsperada++;
+                        }
                     }
-                    DatagramPacket reply = new DatagramPacket(replyMsg.getBytes(), replyMsg.length(), request.getAddress(), request.getPort());
-                    aSocket.send(reply);
+                }
+                else {
+                    System.out.println("Recebida mensagem fora de ordem " + numero + ": " + msg);
+                    mensagensTemporarias.add(msgRecebida);
+
+                    // Notificar o cliente sobre a mensagem que está em falta
+                    String reply = "waitingfor," + proximaMensagemEsperada;
+                    DatagramPacket reply_F = new DatagramPacket(reply.getBytes(), reply.length(), request.getAddress(), request.getPort());
+                    aSocket.send(reply_F);
                 }
 
-                quantidade = listaEmOrdem.size();
             }
         } catch (SocketException e) {
             System.out.println("Socket: " + e.getMessage());
@@ -84,3 +85,4 @@ public class UDPServer {
         }
     }
 }
+
